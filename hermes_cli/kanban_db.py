@@ -94,6 +94,9 @@ from toolsets import get_toolset_names
 
 _log = logging.getLogger(__name__)
 
+# Shared enum used by the Kanban CLI subscription parser and notifier.
+_NOTIFY_DELIVERY_MODES = ("notify", "notify+wake")
+
 
 # ---------------------------------------------------------------------------
 # Constants
