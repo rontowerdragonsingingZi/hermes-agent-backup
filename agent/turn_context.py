@@ -561,6 +561,14 @@ def build_turn_context(
     agent._relay_pending_turn_id = None
     agent._current_turn_id = turn_id
     agent._current_api_request_id = ""
+    # Reset static-site safety state at the actual turn boundary. This makes
+    # the one-root and fail-fast rules apply to a Telegram turn as well as to
+    # the one-shot CLI, without leaking a failed site into the next request.
+    try:
+        from tools.static_site_policy import reset_static_site_turn
+        reset_static_site_turn(turn_id)
+    except Exception:
+        logger.debug("static-site turn state reset skipped", exc_info=True)
     # Tripwire: warn (with both turn ids) when this turn starts before the
     # previous turn's turn-end persist — concurrent turns on one session
     # interleave transcript writes. Cleared in _persist_session.
@@ -1248,8 +1256,10 @@ def build_turn_context(
     # Per-turn file-mutation verifier state.
     agent._turn_failed_file_mutations = {}
     agent._turn_file_mutation_paths = set()
+    agent._turn_static_site_roots = set()
     agent._verification_stop_nudges = 0
     agent._pre_verify_nudges = 0
+    agent._static_site_completion_nudges = 0
 
     # Record the execution thread so interrupt()/clear_interrupt() can scope
     # the tool-level interrupt signal to THIS agent's thread only.

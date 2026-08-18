@@ -260,6 +260,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("timestamps", "Toggle [HH:MM] timestamps on messages and /history", "Configuration",
                cli_only=True, args_hint="[on|off|status]",
                subcommands=("on", "off", "status"), aliases=("ts",)),
+    CommandDef("commit", "Inspect changes, create a commit, and push the current branch", "Git",
+               args_hint="[context]"),
     CommandDef("diff", "Show git changes in the working directory", "Info",
                args_hint="[staged|all|session] [--stat] [path...]",
                subcommands=("staged", "all", "session")),

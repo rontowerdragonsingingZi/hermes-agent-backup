@@ -156,6 +156,21 @@ def test_single_cleanup_step_raises_does_not_skip_others(step):
     assert len(result["cleanup_errors"]) == 1
 
 
+def test_static_site_gate_replaces_success_report(monkeypatch):
+    """A failed static gate must not be followed by the model's success claim."""
+    monkeypatch.setattr(
+        "agent.turn_finalizer._static_site_completion_error",
+        lambda _agent: "/home/shen/dev/site: template review verification evidence is required",
+    )
+    agent = _StubAgent(raise_in=())
+    result = _run(agent, final_response="已建立并上线网站", api_call_count=1,
+                  turn_exit_reason="text_response(finish_reason=stop)")
+    assert result["completed"] is False
+    assert result["failed"] is True
+    assert result["final_response"].startswith("BLOCKED: static-site completion gate failed.")
+    assert "已建立并上线网站" not in result["final_response"]
+
+
 def test_clean_turn_has_no_cleanup_errors_key():
     agent = _StubAgent(raise_in=())
     result = _run(agent)

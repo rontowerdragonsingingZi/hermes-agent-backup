@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 import os
+import random
 import re
 import uuid
 
@@ -713,6 +714,29 @@ def parse_schedule(schedule: str) -> Dict[str, Any]:
     original = schedule
     schedule_lower = schedule.lower()
     
+    # "every X-Y" pattern → recurring interval with a random delay.
+    # The stored kind remains "interval" so existing scheduler lifecycle,
+    # locking, recovery, and at-most-once paths continue to apply unchanged.
+    if schedule_lower.startswith("every "):
+        duration_str = schedule[6:].strip()
+        range_match = re.fullmatch(
+            r"(\d+)\s*-\s*(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)",
+            duration_str.lower(),
+        )
+        if range_match:
+            minimum = int(range_match.group(1))
+            maximum = int(range_match.group(2))
+            if minimum <= 0 or maximum < minimum:
+                raise ValueError(f"Invalid interval range: {duration_str!r}")
+            unit = range_match.group(3)[0]
+            multiplier = {"m": 1, "h": 60, "d": 1440}[unit]
+            return {
+                "kind": "interval",
+                "minutes": minimum * multiplier,
+                "max_minutes": maximum * multiplier,
+                "display": f"every random {minimum}-{maximum}{unit}",
+            }
+
     # "every X" pattern → recurring interval
     if schedule_lower.startswith("every "):
         duration_str = schedule[6:].strip()
@@ -1049,15 +1073,25 @@ def compute_next_run(schedule: Dict[str, Any], last_run_at: Optional[str] = None
         minutes = schedule.get("minutes")
         if minutes is None:
             return None
+        max_minutes = schedule.get("max_minutes")
+        if max_minutes is not None:
+            try:
+                minimum_seconds = max(1, int(minutes * 60))
+                maximum_seconds = max(minimum_seconds, int(max_minutes * 60))
+                delay_seconds = random.randint(minimum_seconds, maximum_seconds)
+            except (TypeError, ValueError):
+                return None
+        else:
+            delay_seconds = int(minutes * 60)
         if last_run_at:
             try:
                 last = _ensure_aware(datetime.fromisoformat(last_run_at))
-                next_run = last + timedelta(minutes=minutes)
+                next_run = last + timedelta(seconds=delay_seconds)
             except Exception:
-                next_run = now + timedelta(minutes=minutes)
+                next_run = now + timedelta(seconds=delay_seconds)
         else:
             # First run is now + interval
-            next_run = now + timedelta(minutes=minutes)
+            next_run = now + timedelta(seconds=delay_seconds)
         return next_run.isoformat()
 
     elif kind == "cron":

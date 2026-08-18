@@ -56,6 +56,23 @@ _background_review_read_paths: "_ctxvars.ContextVar[frozenset[str]]" = _ctxvars.
     "background_review_read_paths", default=frozenset()
 )
 
+# The static-site workflow is enforced by runtime gates, not by curator
+# rewrites. Keep these skills stable so an autonomous review cannot reintroduce
+# the retired local-package/generator path after a successful foreground fix.
+# Foreground, user-directed edits are still allowed; this applies only to the
+# background review origin checked below.
+_STATIC_SITE_PROTECTED_SKILLS = frozenset({
+    "static-seo-site-builder",
+    "software-development/static-seo-site-builder",
+    "static-site-build-recovery",
+    "static-site-generation-verification",
+    "static-site-materialization-recovery",
+    "static-site-release-gate-debugging",
+    "product-led-static-site-publishing",
+    "transparent-editorial-site-publishing",
+    "immutable-editorial-template-publishing",
+})
+
 
 def mark_background_review_skill_read(path: Path) -> None:
     """Record that the active background-review fork has read a skill file.
@@ -316,6 +333,16 @@ def _background_review_write_guard(
             return None
     except Exception:
         return None
+
+    if name in _STATIC_SITE_PROTECTED_SKILLS:
+        return {
+            "success": False,
+            "error": (
+                f"Refusing background curator {action} for static-site skill "
+                f"'{name}': this workflow is runtime-protected and must only "
+                "change through an explicit foreground maintenance request."
+            ),
+        }
 
     # Pin must be respected by autonomous maintenance. The curator already
     # skips pinned skills from every auto-transition; the background review

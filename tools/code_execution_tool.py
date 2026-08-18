@@ -301,6 +301,8 @@ def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
 
 def check_sandbox_requirements() -> bool:
     """Code execution sandbox requires a POSIX OS for Unix domain sockets."""
+    if os.environ.get("HERMES_KANBAN_READ_ONLY") == "1":
+        return False
     if not SANDBOX_AVAILABLE:
         return False
 

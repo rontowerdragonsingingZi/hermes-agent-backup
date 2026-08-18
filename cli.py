@@ -11621,6 +11621,11 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             self._status_bar_visible = not self._status_bar_visible
             state = "visible" if self._status_bar_visible else "hidden"
             self._console_print(f"  Status bar {state}")
+        elif canonical == "commit":
+            from hermes_cli.commit_command import build_commit_prompt
+            prompt = build_commit_prompt(cmd_original.partition(" ")[2])
+            self._pending_input.put(prompt)
+            self._console_print("  Running repository commit workflow…")
         elif canonical == "diff":
             self._handle_diff_command(cmd_original)
         elif canonical == "battery":

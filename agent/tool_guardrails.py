@@ -270,6 +270,25 @@ def classify_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str
     return False, ""
 
 
+def non_retryable_tool_failure_reason(tool_name: str, result: str | None) -> str:
+    """Return a reason when a tool failure cannot be fixed by retrying.
+
+    Provider credentials are process configuration, not request parameters.
+    Retrying the same provider call only burns turns and can leave an agent in
+    an unbounded loop. Keep this classifier deliberately narrow: only explicit
+    missing-credential messages are terminal here; transient network failures
+    remain eligible for the normal retry guidance.
+    """
+    if not result:
+        return ""
+    if tool_name == "web_search" and "BRAVE_SEARCH_API_KEY is not set" in result:
+        return (
+            "web_search cannot run because BRAVE_SEARCH_API_KEY is not set. "
+            "Use local/package sources or report the missing configuration; do not retry."
+        )
+    return ""
+
+
 class ToolCallGuardrailController:
     """Per-turn controller for repeated failed/non-progressing tool calls."""
 
@@ -294,6 +313,28 @@ class ToolCallGuardrailController:
 
     def before_call(self, tool_name: str, args: Mapping[str, Any] | None) -> ToolGuardrailDecision:
         signature = ToolCallSignature.from_call(tool_name, _coerce_args(args))
+        if self._halt_decision is not None:
+            # Keep the terminal decision for finalization, but scope a
+            # pre-call block to the call that triggered it. In a concurrent
+            # tool batch, one repeated failure must not suppress an unrelated
+            # call that was submitted alongside it.
+            halt = self._halt_decision
+            same_signature = halt.signature == signature
+            same_non_retryable_tool = (
+                halt.code == "non_retryable_tool_failure"
+                and halt.tool_name == tool_name
+            )
+            if same_signature or same_non_retryable_tool:
+                if halt.action == "halt":
+                    return ToolGuardrailDecision(
+                        action="block",
+                        code=halt.code,
+                        message=halt.message,
+                        tool_name=tool_name,
+                        count=halt.count,
+                        signature=signature,
+                    )
+                return halt
 
         # ── Per-turn runaway-loop caps ──────────────────────────────────
         # These are hard ceilings on how many times a runaway-prone tool may
@@ -364,6 +405,19 @@ class ToolCallGuardrailController:
             exact_count = self._exact_failure_counts.get(signature, 0) + 1
             self._exact_failure_counts[signature] = exact_count
             self._no_progress.pop(signature, None)
+
+            terminal_reason = non_retryable_tool_failure_reason(tool_name, result)
+            if terminal_reason:
+                decision = ToolGuardrailDecision(
+                    action="halt",
+                    code="non_retryable_tool_failure",
+                    message=terminal_reason,
+                    tool_name=tool_name,
+                    count=exact_count,
+                    signature=signature,
+                )
+                self._halt_decision = decision
+                return decision
 
             same_count = self._same_tool_failure_counts.get(tool_name, 0) + 1
             self._same_tool_failure_counts[tool_name] = same_count

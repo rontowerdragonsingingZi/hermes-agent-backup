@@ -637,30 +637,30 @@ def prepare_tool_preview(
 # A trailing space-then-preview is appended by build_tool_label() when the
 # tool's argument preview is available (e.g. "Reading docs/api.md").
 _TOOL_VERBS: dict[str, str] = {
-    "web_search": "Searching the web",
-    "web_extract": "Reading",
-    "browser_navigate": "Browsing",
-    "browser_click": "Clicking",
-    "browser_type": "Typing",
-    "read_file": "Reading",
-    "write_file": "Writing",
-    "patch": "Editing",
-    "search_files": "Searching files",
-    "terminal": "Running",
-    "execute_code": "Running code",
-    "image_generate": "Generating image",
-    "video_generate": "Generating video",
-    "text_to_speech": "Generating speech",
-    "vision_analyze": "Looking at the image",
-    "session_search": "Searching past sessions",
-    "skill_view": "Reading skill",
-    "skills_list": "Listing skills",
-    "skill_manage": "Updating skill",
-    "delegate_task": "Delegating",
-    "cronjob": "Scheduling",
-    "clarify": "Asking",
-    "memory": "Updating memory",
-    "todo": "Updating tasks",
+    "web_search": "搜尋網路",
+    "web_extract": "讀取",
+    "browser_navigate": "瀏覽",
+    "browser_click": "點擊",
+    "browser_type": "輸入",
+    "read_file": "讀取",
+    "write_file": "寫入",
+    "patch": "編輯",
+    "search_files": "搜尋檔案",
+    "terminal": "執行",
+    "execute_code": "執行程式碼",
+    "image_generate": "生成圖片",
+    "video_generate": "生成影片",
+    "text_to_speech": "生成語音",
+    "vision_analyze": "查看圖片",
+    "session_search": "查詢過往工作階段",
+    "skill_view": "讀取技能",
+    "skills_list": "列出技能",
+    "skill_manage": "更新技能",
+    "delegate_task": "委派",
+    "cronjob": "排程",
+    "clarify": "詢問",
+    "memory": "更新記憶",
+    "todo": "更新任務",
 }
 
 # Verbs that read better without the raw argument preview appended.
@@ -704,8 +704,8 @@ def get_tool_verb(tool_name: str) -> str | None:
 
 
 def tool_verb_connector(tool_name: str) -> str:
-    """Return the connector between a verb and its preview (" for " or " ")."""
-    return " for " if tool_name in _TOOL_VERBS_FOR_CONNECTOR else " "
+    """Return the connector between a verb and its preview."""
+    return "：" if tool_name in _TOOL_VERBS_FOR_CONNECTOR else " "
 
 
 def verb_drops_preview(tool_name: str) -> bool:
@@ -781,9 +781,7 @@ def build_tool_label(tool_name: str, args: dict, max_len: int | None = None) -> 
     preview = build_tool_preview(tool_name, args, max_len=max_len)
     if not preview:
         return verb
-    if tool_name in _TOOL_VERBS_FOR_CONNECTOR:
-        return f"{verb} for {preview}"
-    return f"{verb} {preview}"
+    return f"{verb}{tool_verb_connector(tool_name)}{preview}"
 
 
 # =========================================================================

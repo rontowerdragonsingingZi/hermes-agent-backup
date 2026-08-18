@@ -8076,6 +8076,61 @@ def run_conversation(
                 # report") and stop with finish_reason=stop — a clean exit
                 # that the dispatcher records as protocol_violation. Nudge
                 # once or twice before allowing that exit.
+                # Static-site projects have a hard completion gate that runs after this loop.
+                # If it fails at stop time, keep the same task alive for a bounded repair pass.
+                # The final gate remains authoritative after the continuation.
+                _static_site_nudge = None
+                try:
+                    from agent.turn_finalizer import _static_site_completion_error
+
+                    _static_site_error = _static_site_completion_error(agent)
+                    _static_site_attempt = getattr(agent, "_static_site_completion_nudges", 0)
+                    if _static_site_error and _static_site_attempt < 2:
+                        _static_site_nudge = (
+                            "[Static-site completion gate] The current site is not complete. "
+                            "Continue the same task and repair the actual project root; do not "
+                            "report success yet. The gate found: "
+                            + _static_site_error + chr(10) + chr(10)
+                            + "Inspect the referencing file directory for every local href/src and "
+                            "CSS url(...), repair missing targets, then rerun the complete review. "
+                            "For example, from articles/foo.html a root-level 404.html must be "
+                            "referenced as ../404.html. Preserve the custom 404 and the final gate; "
+                            "if content or placeholders fail, patch the reported existing HTML file directly "
+                            "with write_file or patch only. Do not create or run build_site.py, renderers, "
+                            "generators, execute_code, or helper scripts; do not switch roots/templates, "
+                            "staging directories, or bypass the check."
+                        )
+                except Exception:
+                    logger.debug("static-site completion continuation check failed", exc_info=True)
+
+                if _static_site_nudge:
+                    agent._static_site_completion_nudges = (
+                        getattr(agent, "_static_site_completion_nudges", 0) + 1
+                    )
+                    final_msg["finish_reason"] = "static_site_completion_required"
+                    agent._emit_interim_assistant_message(final_msg)
+                    messages.append(final_msg)
+                    try:
+                        agent._flush_messages_to_session_db(messages, conversation_history)
+                    except Exception:
+                        logger.debug("static-site continuation interim flush failed", exc_info=True)
+                    messages.append({
+                        "role": "user",
+                        "content": _static_site_nudge,
+                        "_static_site_completion_synthetic": True,
+                    })
+                    agent._session_messages = messages
+                    logger.info(
+                        "static-site completion continuation nudge issued (attempt %d)",
+                        agent._static_site_completion_nudges,
+                    )
+                    _pending_verification_response = final_response
+                    _pending_verification_response_previewed = (
+                        agent._interim_content_was_streamed(final_response or "")
+                    )
+                    final_response = None
+                    continue
+
                 try:
                     from agent.kanban_stop import build_kanban_stop_nudge
 

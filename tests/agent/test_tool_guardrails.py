@@ -63,6 +63,20 @@ def test_config_parses_nested_warn_and_hard_stop_thresholds():
     assert cfg.no_progress_block_after == 8
 
 
+def test_missing_search_credentials_halt_immediately_even_without_hard_stop():
+    controller = ToolCallGuardrailController()
+    args = {"query": "same"}
+    result = "{\"error\":\"BRAVE_SEARCH_API_KEY is not set\"}"
+
+    decision = controller.after_call("web_search", args, result, failed=True)
+
+    assert decision.action == "halt"
+    assert decision.code == "non_retryable_tool_failure"
+    assert decision.count == 1
+    assert controller.halt_decision == decision
+    assert controller.before_call("web_search", args).action == "block"
+
+
 def test_default_repeated_identical_failed_call_warns_without_blocking():
     controller = ToolCallGuardrailController()
     args = {"query": "same"}
