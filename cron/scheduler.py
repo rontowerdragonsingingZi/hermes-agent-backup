@@ -5528,6 +5528,8 @@ def run_job(
             except Exception as e:
                 logger.debug("Job '%s': failed to load credential pool for %s: %s", job_id, runtime_provider, e)
 
+        _cron_toolsets = _resolve_cron_enabled_toolsets(job, _cfg)
+
         # Initialize MCP servers so configured mcp_servers are available to
         # the agent's tool registry before AIAgent is constructed. Without
         # this, cron jobs never saw any MCP tools — only the gateway / CLI
@@ -5537,7 +5539,15 @@ def run_job(
         # shouldn't kill an otherwise-working cron job. See #4219.
         try:
             from tools.mcp_tool import discover_mcp_tools
-            _mcp_tools = discover_mcp_tools()
+            from hermes_cli.tools_config import enabled_mcp_server_names
+            if _cron_toolsets is None:
+                _mcp_tools = discover_mcp_tools()
+            else:
+                _enabled_mcp = enabled_mcp_server_names(_cfg)
+                _mcp_allowlist = set(_cron_toolsets) & set(_enabled_mcp)
+                _mcp_tools = discover_mcp_tools(
+                    allowed_server_names=_mcp_allowlist,
+                )
             if _mcp_tools:
                 logger.info(
                     "Job '%s': %d MCP tool(s) available",
@@ -5568,7 +5578,7 @@ def run_job(
             providers_order=pr.get("order"),
             provider_sort=pr.get("sort"),
             openrouter_min_coding_score=(_cfg.get("openrouter") or {}).get("min_coding_score"),
-            enabled_toolsets=_resolve_cron_enabled_toolsets(job, _cfg),
+            enabled_toolsets=_cron_toolsets,
             disabled_toolsets=_resolve_cron_disabled_toolsets(_cfg),
             quiet_mode=True,
             # Cron jobs should always inherit the user's SOUL.md identity from

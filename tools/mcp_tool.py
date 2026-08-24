@@ -7382,7 +7382,9 @@ def register_mcp_servers(servers: Dict[str, dict]) -> List[str]:
     return _existing_tool_names()
 
 
-def discover_mcp_tools() -> List[str]:
+def discover_mcp_tools(
+    allowed_server_names: Optional[Set[str]] = None,
+) -> List[str]:
     """Entry point: load config, connect to MCP servers, register tools.
 
     Called from ``model_tools`` after ``discover_builtin_tools()``. Safe to call even when
@@ -7395,6 +7397,13 @@ def discover_mcp_tools() -> List[str]:
         List of all registered MCP tool names.
     """
     servers = _load_mcp_config()
+    if allowed_server_names is not None:
+        allowed = {str(name) for name in allowed_server_names}
+        servers = {name: config for name, config in servers.items() if name in allowed}
+        logger.info(
+            "MCP discovery restricted to %d allowlisted server(s): %s",
+            len(allowed), ", ".join(sorted(allowed)) or "<none>",
+        )
     if not servers:
         logger.debug("No MCP servers configured")
         return []
