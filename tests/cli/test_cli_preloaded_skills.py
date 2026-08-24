@@ -75,7 +75,7 @@ def _real_finalize(cli_obj):
 
 def _capture_real_finalize():
     import cli as cli_mod
-    return cli_mod.HermesCLI.__dict__["finalize_preloaded_skills"]
+    return cli_mod.HermesCLI.finalize_preloaded_skills
 
 
 _REAL_FINALIZE = _capture_real_finalize()

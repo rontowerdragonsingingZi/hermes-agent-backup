@@ -24,6 +24,46 @@ from utils import base_url_host_matches
 class CLIAgentSetupMixin:
     """Agent construction + session-resume display methods for ``HermesCLI``."""
 
+    def finalize_preloaded_skills(self) -> None:
+        """Join the background ``--skills`` preload and fold it into the prompt.
+
+        This belongs to the lifecycle mixin because ``_init_agent`` calls it
+        before the agent snapshots ``system_prompt``. Keeping the method in
+        the same MRO component prevents Kanban workers from failing during
+        startup when the concrete CLI class is assembled or loaded separately.
+        """
+        if getattr(self, "_preload_skills_finalized", False):
+            return
+        thread = getattr(self, "_preload_skills_thread", None)
+        if thread is None:
+            self._preload_skills_finalized = True
+            return
+        thread.join(timeout=120)
+        self._preload_skills_finalized = True
+        err = getattr(self, "_preload_skills_error", None)
+        if err is not None:
+            raise err
+        result = getattr(self, "_preload_skills_result", None)
+        if not result:
+            return
+        skills_prompt, loaded_skills, missing_skills = result
+        if missing_skills:
+            missing_display = ", ".join(missing_skills)
+            if loaded_skills:
+                from cli import logger
+                logger.warning(
+                    "Unknown skill(s) requested, skipping: %s. Continuing with: %s.",
+                    missing_display,
+                    ", ".join(loaded_skills),
+                )
+            else:
+                raise ValueError(f"Unknown skill(s): {missing_display}")
+        if skills_prompt:
+            self.system_prompt = "\n\n".join(
+                part for part in (self.system_prompt, skills_prompt) if part
+            ).strip()
+            self.preloaded_skills = loaded_skills
+
     def _ensure_runtime_credentials(self) -> bool:
         """
         Ensure runtime credentials are resolved before agent use.
