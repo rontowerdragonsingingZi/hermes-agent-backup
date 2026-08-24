@@ -1321,6 +1321,12 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
 
     active_client = client or agent._ensure_primary_openai_client(reason="codex_stream_direct")
     max_stream_retries = 1
+    _cron_timeout = getattr(agent, "_cron_api_timeout_seconds", None)
+    _cron_deadline = (
+        time.monotonic() + float(_cron_timeout)
+        if isinstance(_cron_timeout, (int, float)) and _cron_timeout > 0
+        else None
+    )
     # Accumulate streamed text so callers / compat shims can read it.
     agent._codex_streamed_text_parts: list = []
 
@@ -1342,6 +1348,8 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
     for attempt in range(max_stream_retries + 1):
         if agent._interrupt_requested:
             raise InterruptedError("Agent interrupted before Codex stream retry")
+        if _cron_deadline is not None and time.monotonic() >= _cron_deadline:
+            raise TimeoutError("Cron Codex stream exceeded its configured wall-clock timeout")
 
         intercepted_events = []
         writer_token = {"value": None}
@@ -1349,6 +1357,9 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
         def _open_codex_stream(next_api_kwargs: dict[str, Any]):
             stream_kwargs = dict(next_api_kwargs)
             stream_kwargs["stream"] = True
+            _cron_timeout = getattr(agent, "_cron_api_timeout_seconds", None)
+            if isinstance(_cron_timeout, (int, float)) and _cron_timeout > 0:
+                stream_kwargs["timeout"] = float(_cron_timeout)
             return active_client.responses.create(**stream_kwargs)
 
         def _codex_stream_created(_raw_stream: Any) -> None:
@@ -1434,7 +1445,11 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
             raise
 
         def _interrupt_or_superseded() -> bool:
-            return bool(agent._interrupt_requested)
+            if agent._interrupt_requested:
+                return True
+            if _cron_deadline is not None and time.monotonic() >= _cron_deadline:
+                raise TimeoutError("Cron Codex stream exceeded its configured wall-clock timeout")
+            return False
 
         try:
             try:

@@ -5593,7 +5593,10 @@ def run_job(
             session_id=_cron_session_id,
             session_db=_session_db,
         )
-        
+        _job_api_timeout = job.get("api_timeout_seconds")
+        if isinstance(_job_api_timeout, (int, float)) and _job_api_timeout > 0:
+            agent._cron_api_timeout_seconds = float(_job_api_timeout)
+
         # Run the agent with an *inactivity*-based timeout: the job can run
         # for hours if it's actively calling tools / receiving stream tokens,
         # but a hung API call or stuck tool with no activity for the configured
