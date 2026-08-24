@@ -10762,6 +10762,17 @@ def _default_spawn(
         # This only happens in test fixtures where the isolated
         # HERMES_HOME never had profiles created.
         pass
+
+    # GitHub CLI auth is user-scoped, while Kanban workers switch HERMES_HOME
+    # to the assigned profile. Pin gh to the user's existing config directory
+    # so profile activation cannot make an authenticated gh session disappear.
+    # Never copy tokens into the worker environment or remote URLs.
+    if not env.get("GH_CONFIG_DIR"):
+        _gh_config_dir = os.path.expanduser("~/.config/gh")
+        if os.path.isdir(_gh_config_dir):
+            env["GH_CONFIG_DIR"] = _gh_config_dir
+    # Production sync must never wait for an interactive password prompt.
+    env["GIT_TERMINAL_PROMPT"] = "0"
     if task.tenant:
         env["HERMES_TENANT"] = task.tenant
     env["HERMES_KANBAN_TASK"] = task.id

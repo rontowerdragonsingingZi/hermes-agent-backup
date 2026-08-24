@@ -83,6 +83,8 @@ agent:
     assert pid == 4242
     assert captured["env"]["HERMES_HOME"] == str(profile)
     assert captured["env"]["HERMES_KANBAN_TASK"] == "t_spawn_tools"
+    assert captured["env"]["GIT_TERMINAL_PROMPT"] == "0"
+    assert captured["env"].get("GH_CONFIG_DIR", "").endswith("/.config/gh")
     assert "--toolsets" in captured["cmd"]
     pinned = captured["cmd"][captured["cmd"].index("--toolsets") + 1].split(",")
     for required in ("terminal", "web", "file", "skills", "code_execution", "delegation"):
