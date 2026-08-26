@@ -34,6 +34,7 @@ except ImportError:  # pragma: no cover - non-Windows
     msvcrt = None
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from hermes_constants import get_hermes_home
 from typing import Optional, Dict, List, Any, Set, Tuple, Union, Collection
 
@@ -1058,13 +1059,25 @@ def compute_next_run(schedule: Dict[str, Any], last_run_at: Optional[str] = None
 
     Returns ISO timestamp string, or None if no more runs.
     """
-    now = _hermes_now()
-
     if not isinstance(schedule, dict):
         return None
     kind = schedule.get("kind")
     if kind is None:
         return None
+
+    # A schedule may pin its wall-clock timezone without changing Hermes'
+    # global timezone. This is used by the site-skill curator, whose contract
+    # is specifically 22:00 Asia/Shanghai. Older jobs have no key and retain
+    # the historical configured-Hermes-timezone behavior.
+    now = _hermes_now()
+    schedule_tz = None
+    timezone_name = schedule.get("timezone")
+    if timezone_name:
+        try:
+            schedule_tz = ZoneInfo(str(timezone_name))
+            now = now.astimezone(schedule_tz)
+        except (TypeError, ValueError, ZoneInfoNotFoundError):
+            logger.warning("Invalid cron schedule timezone %r; using Hermes timezone", timezone_name)
 
     if kind == "once":
         return _recoverable_oneshot_run_at(schedule, now, last_run_at=last_run_at)
@@ -1114,7 +1127,13 @@ def compute_next_run(schedule: Dict[str, Any], last_run_at: Optional[str] = None
         base_time = now
         if last_run_at:
             try:
-                base_time = _ensure_aware(datetime.fromisoformat(last_run_at))
+                base_time = datetime.fromisoformat(last_run_at)
+                if base_time.tzinfo is None:
+                    base_time = base_time.replace(tzinfo=now.tzinfo)
+                elif schedule_tz is not None:
+                    base_time = base_time.astimezone(schedule_tz)
+                else:
+                    base_time = _ensure_aware(base_time)
             except Exception:
                 base_time = now
         cron = croniter(expr, base_time)
