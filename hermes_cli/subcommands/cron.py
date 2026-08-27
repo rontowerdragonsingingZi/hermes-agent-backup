@@ -259,6 +259,22 @@ def build_cron_parser(subparsers, *, cmd_cron: Callable) -> None:
     cron_runs.add_argument("job_id", nargs="?", help="Optional job ID filter")
     cron_runs.add_argument("--limit", type=int, default=20, help="Rows to show (1-500)")
 
+    # cron site-skills — LLM-assisted, read-only website audit.
+    site_skills = cron_subparsers.add_parser(
+        "site-skills",
+        help="Maintain one LLM-curated SEO skill inside each static site",
+        description="Scan /home/shen/dev and update only site-local SEO skills.",
+    )
+    site_skills.add_argument(
+        "action", nargs="?", choices=("run", "install"), default="run",
+        help="run an audit now, or install/update the daily 22:00 Asia/Shanghai job",
+    )
+    site_skills.add_argument("--site", action="append", help="Limit to a site directory (repeatable)")
+    site_skills.add_argument("--force", action="store_true", help="Fully refresh existing skills")
+    site_skills.add_argument("--dry-run", action="store_true", help="Do not write generated skills")
+    site_skills.add_argument("--deliver", help="Report target for this run or installed job")
+    site_skills.add_argument("--job-id", dest="site_skills_job_id", help="Existing job ID")
+
     # cron notepad — per-job durable KV scratchpad (injected into the job
     # prompt each run; the running agent writes it via this CLI).
     cron_notepad = cron_subparsers.add_parser(

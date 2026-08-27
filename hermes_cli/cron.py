@@ -498,7 +498,13 @@ def cron_edit(args):
     return 0
 
 
-def _job_action(action: str, job_id: str, success_verb: str) -> int:
+def _job_action(
+    action: str,
+    job_id: str,
+    success_verb: str,
+    *,
+    extra_prompt: Optional[str] = None,
+) -> int:
     _stateless_reset = None
     if action == "run":
         # One-shot CLI: this process exits as soon as the command returns, so
@@ -521,7 +527,7 @@ def _job_action(action: str, job_id: str, success_verb: str) -> int:
         except Exception:
             _stateless_reset = None
     try:
-        result = _cron_api(action=action, job_id=job_id)
+        result = _cron_api(action=action, job_id=job_id, prompt=extra_prompt)
     finally:
         if _stateless_reset is not None:
             _stateless_reset()
@@ -621,6 +627,193 @@ def cron_notepad(args) -> int:
         return 1
 
 
+SITE_SKILLS_JOB_NAME = "Website-specific SEO Skill scan"
+SITE_SKILLS_DEFAULT_DELIVERY = "telegram:7720286103:49061"
+SITE_SKILLS_WORKDIR = "/home/shen/dev"
+
+
+def _site_skills_prompt(*, sites=None, force=False, dry_run=False) -> str:
+    """Build the fixed LLM instruction for the site-skill curator job."""
+    selected = "all immediate site directories"
+    if sites:
+        selected = ", ".join(str(site) for site in sites)
+    mode = "full refresh" if force else "incremental refresh"
+    write_rule = (
+        "Do not write any generated files; report proposed changes only."
+        if dry_run
+        else "Write only the site-local generated Skill files allowed by the curator Skill."
+    )
+    return f"""Run the static-site Skill curator procedure now. The complete
+protocol is embedded in this prompt; do not depend on an attached profile Skill.
+
+Scope: /home/shen/dev; target: {selected}; mode: {mode}.
+{write_rule}
+
+This is an LLM-assisted read-only audit of website source. Read the actual
+HTML/CSS/JS and content structure, classify every candidate STATIC, DYNAMIC, or
+UNKNOWN, and process STATIC sites only. For every STATIC site maintain exactly
+one site-local Skill under that site's own .agents/skills/seo-site-<slug>/.
+Create/update SKILL.md plus references/site-structure.md,
+references/content-style.md, and references/seo-policy.md as evidence requires.
+SKILL.md must record the domain, absolute root, exact write boundary, and links
+to the three references. site-structure.md must contain a Page Map and Page
+Contracts with URL, file_path, page_type, primary_topic, page_purpose,
+current_title, current_h1, major_sections, inbound_internal_links, and
+outbound_internal_links. Record titles, H1/H2/H3, meta description, canonical,
+robots meta, JSON-LD, navigation/header/footer, shared CSS/JS, image alt,
+anchor text, sitemap, and robots.txt structure.
+
+Infer content-style.md from repeated evidence in the existing site: language,
+regional terms, voice, sentence/paragraph length, title patterns, tables and
+lists, testing/review phrasing, terminology, AI-template phrases to avoid, and
+empty content not to add. Preserve the source voice; never instruct a later
+agent to make content more professional, add more SEO content, or make it more
+complete. seo-policy.md must separate low-risk allowed SEO changes from default
+protected URL/slug, redirects, canonical, robots/noindex, sitemap, page
+creation/deletion, architecture, and non-SEO code. Keep home/category/article
+anchor, title, H1, and topic semantics consistent without requiring identical
+strings.
+
+The website's HTML/CSS/JS/assets/configuration/content are read-only. Never
+modify a website file, commit anything, cross a site root, or perform SEO
+optimization. DYNAMIC and UNKNOWN sites must be skipped without creating or
+updating a Skill. Preserve unchanged generated sections whenever possible.
+
+At the end, return exactly this report, replacing every N and time with real
+values and using Beijing time. Continue after individual site failures:
+
+🧭 網站專屬修改Skill 掃描完成
+
+⏱️ 執行時間：XX:XX —— XX:XX
+
+🌐 掃描網站：N 個
+📄 靜態網站：N 個
+⏭️ 系統專案 跳過：N 個
+❓ UNKNOWN 跳過：N 個
+
+🆕 新建立 Skill：N 個
+🔄 更新 Skill：N 個
+✅ 無變化 Skill：N 個
+❌ 執行失敗：N 個
+
+📊 本次 Cron 掃描與 Skill 維護已完成。
+
+If failures exist, append only a short failure list after the report."""
+
+
+def _site_skills_existing_job(job_id: Optional[str] = None):
+    from cron.jobs import list_jobs, resolve_job_ref
+
+    if job_id:
+        return resolve_job_ref(job_id)
+    matches = [
+        job for job in list_jobs(include_disabled=True)
+        if job.get("name") == SITE_SKILLS_JOB_NAME
+    ]
+    return matches[0] if matches else None
+
+
+def cron_site_skills_install(args) -> int:
+    """Create/update the persistent daily LLM curator job."""
+    from cron.jobs import create_job, update_job
+
+    existing = _site_skills_existing_job(getattr(args, "site_skills_job_id", None))
+    prompt = _site_skills_prompt(
+        sites=getattr(args, "site", None),
+        force=getattr(args, "force", False),
+        dry_run=getattr(args, "dry_run", False),
+    )
+    delivery = getattr(args, "deliver", None) or SITE_SKILLS_DEFAULT_DELIVERY
+    fields = {
+        "schedule": {
+            "kind": "cron",
+            "expr": "0 22 * * *",
+            "display": "0 22 * * * Asia/Shanghai",
+            "timezone": "Asia/Shanghai",
+        },
+        "schedule_display": "0 22 * * * Asia/Shanghai",
+        "prompt": prompt,
+        # The full curator protocol is embedded in the prompt below. Do not
+        # attach a profile skill here: bundled repo skills are not guaranteed
+        # to be installed in the active profile at fire time.
+        "skills": [],
+        "skill": None,
+        "deliver": delivery,
+        "workdir": SITE_SKILLS_WORKDIR,
+        "enabled": True,
+        "name": SITE_SKILLS_JOB_NAME,
+    }
+    if existing:
+        job = update_job(existing["id"], fields)
+        action = "Updated"
+    else:
+        job = create_job(
+            prompt=prompt,
+            schedule="0 22 * * *",
+            name=SITE_SKILLS_JOB_NAME,
+            deliver=delivery,
+            workdir=SITE_SKILLS_WORKDIR,
+        )
+        # create_job accepts the public cron string; apply the extra per-job
+        # timezone metadata through the normal update path immediately after
+        # creation so first-run scheduling is also Beijing-time aware.
+        job = update_job(job["id"], fields) or job
+        action = "Created"
+    if not job:
+        print(color("Failed to install site-skills Cron job.", Colors.RED))
+        return 1
+    print(color(f"{action} site-skills Cron job: {job['id']}", Colors.GREEN))
+    print("  Schedule: 0 22 * * * Asia/Shanghai")
+    print(f"  Deliver:  {delivery}")
+    print(f"  Workdir:  {SITE_SKILLS_WORKDIR}")
+    print(f"  Next run: {job.get('next_run_at', '?')}")
+    _warn_if_gateway_not_running()
+    return 0
+
+
+def cron_site_skills_run(args) -> int:
+    """Trigger the persistent curator job through the normal Cron engine."""
+    from types import SimpleNamespace
+
+    job = _site_skills_existing_job(getattr(args, "site_skills_job_id", None))
+    if not job:
+        # Install the durable daily job first. A persistent recurring job is
+        # essential here: one-shot jobs can be removed by the dispatch-limit
+        # guard while a long LLM run is still in flight, invalidating its fire
+        # claim and producing "stale result was discarded".
+        rc = cron_site_skills_install(
+            SimpleNamespace(
+                site=None,
+                force=False,
+                dry_run=False,
+                deliver=None,
+                site_skills_job_id=None,
+            )
+        )
+        if rc:
+            return rc
+        job = _site_skills_existing_job()
+    if not job:
+        print(color("Site-skills Cron job could not be resolved after install.", Colors.RED))
+        return 1
+
+    overrides = []
+    sites = getattr(args, "site", None)
+    if sites:
+        overrides.append("Target only these site directories: " + ", ".join(sites))
+    if getattr(args, "force", False):
+        overrides.append("Use full refresh mode for this fire.")
+    if getattr(args, "dry_run", False):
+        overrides.append("Dry run for this fire: do not write generated Skills.")
+    extra_prompt = "\n".join(overrides) or None
+    return _job_action(
+        "run",
+        job["id"],
+        "Triggered",
+        extra_prompt=extra_prompt,
+    )
+
+
 def cron_command(args):
     """Handle cron subcommands."""
     subcmd = getattr(args, 'cron_command', None)
@@ -644,6 +837,11 @@ def cron_command(args):
     if subcmd == "notepad":
         return cron_notepad(args)
 
+    if subcmd == "site-skills":
+        if getattr(args, "action", "run") == "install":
+            return cron_site_skills_install(args)
+        return cron_site_skills_run(args)
+
     if subcmd in {"create", "add"}:
         return cron_create(args)
 
@@ -663,5 +861,5 @@ def cron_command(args):
         return _job_action("remove", args.job_id, "Removed")
 
     print(f"Unknown cron command: {subcmd}")
-    print("Usage: hermes cron [list|create|edit|pause|resume|run|remove|status|runs|tick]")
+    print("Usage: hermes cron [list|create|edit|pause|resume|run|remove|status|runs|site-skills|tick]")
     sys.exit(1)
